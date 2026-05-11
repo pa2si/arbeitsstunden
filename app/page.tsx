@@ -1,65 +1,351 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import { useState } from 'react';
+
+// 1. Define the TypeScript type for our time blocks
+type TimeBlock = {
+  login: string;
+  logout: string;
+};
+
+export default function WorkTimeCalculator() {
+  // Configuration - allow string so the user can completely clear the input
+  const [targetHours, setTargetHours] = useState<number | string>(8);
+
+  // Dynamic Array for Time Blocks
+  const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([
+    { login: '08:00', logout: '16:00' },
+  ]);
+
+  // Handlers for dynamic rows
+  const addTimeBlock = () => {
+    setTimeBlocks([...timeBlocks, { login: '', logout: '' }]);
+  };
+
+  const removeTimeBlock = (indexToRemove: number) => {
+    setTimeBlocks(timeBlocks.filter((_, index) => index !== indexToRemove));
+  };
+
+  // Ensure 'field' only accepts the keys from our TimeBlock type
+  const updateTimeBlock = (
+    index: number,
+    field: keyof TimeBlock,
+    value: string,
+  ) => {
+    const newBlocks = [...timeBlocks];
+    newBlocks[index][field] = value;
+    setTimeBlocks(newBlocks);
+  };
+
+  // Helper to convert "HH:MM" to total minutes
+  const timeToMins = (t: string | null): number | null => {
+    if (!t) return null;
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  // Helper to convert minutes to "Hh Mm" string
+  const minsToTimeStr = (m: number): string => {
+    const isNegative = m < 0;
+    const absM = Math.abs(m);
+    const hours = Math.floor(absM / 60);
+    const mins = absM % 60;
+    return `${isNegative ? '-' : ''}${hours}h ${mins}m`;
+  };
+
+  // ==========================================
+  // CALCULATIONS (Derived directly during render)
+  // ==========================================
+
+  let rawWorked = 0;
+  let totalManualGaps = 0;
+
+  const validBlocks = [];
+  for (const block of timeBlocks) {
+    const inMins = timeToMins(block.login);
+    const outMins = timeToMins(block.logout);
+    if (inMins !== null) {
+      validBlocks.push({ in: inMins, out: outMins, hasOut: outMins !== null });
+    }
+  }
+
+  for (let i = 0; i < validBlocks.length; i++) {
+    const block = validBlocks[i];
+    if (block.hasOut && block.out !== null) {
+      let duration = block.out - block.in;
+      if (duration < 0) duration += 24 * 60;
+      rawWorked += duration;
+    }
+    if (i > 0) {
+      const prevBlock = validBlocks[i - 1];
+      if (prevBlock.hasOut && prevBlock.out !== null) {
+        let gap = block.in - prevBlock.out;
+        if (gap < 0) gap += 24 * 60;
+        if (gap > 0) totalManualGaps += gap;
+      }
+    }
+  }
+
+  let E = 0; // Effective Work
+  let A = 0; // Auto Pauses
+  let rem = rawWorked;
+
+  if (rem <= 360) {
+    E = rem;
+    rem = 0;
+  } else {
+    E = 360;
+    rem -= 360;
+
+    let currentTotalBreak = totalManualGaps + A;
+    const shortfall = Math.max(0, 30 - currentTotalBreak);
+
+    if (rem <= shortfall) {
+      A += rem;
+      rem = 0;
+    } else {
+      A += shortfall;
+      rem -= shortfall;
+
+      if (rem <= 120) {
+        E += rem;
+        rem = 0;
+      } else {
+        E += 120;
+        rem -= 120;
+
+        currentTotalBreak = totalManualGaps + A;
+        const shortfall2 = Math.max(0, 45 - currentTotalBreak);
+
+        if (rem <= shortfall2) {
+          A += rem;
+          rem = 0;
+        } else {
+          A += shortfall2;
+          rem -= shortfall2;
+          E += rem;
+        }
+      }
+    }
+  }
+
+  const effectiveWorked = E;
+  const autoPausesAppliedNow = A;
+
+  // Safely parse the target hours, defaulting to 0 if the input is empty or invalid
+  const numericTargetHours = Number(targetHours) || 0;
+  const targetMins = numericTargetHours * 60;
+  const remainingMins = Math.max(0, targetMins - effectiveWorked);
+
+  let projectedRequiredBreak = 0;
+  if (targetMins > 480) projectedRequiredBreak = 45;
+  else if (targetMins > 360) projectedRequiredBreak = 30;
+
+  const totalAutoPausesForTarget = Math.max(
+    0,
+    projectedRequiredBreak - totalManualGaps,
+  );
+  const totalLoggedInTimeNeeded = targetMins + totalAutoPausesForTarget;
+  const remainingLoggedInTime = totalLoggedInTimeNeeded - rawWorked;
+
+  let expectedEndStr = '--:--';
+
+  if (validBlocks.length > 0 && remainingMins > 0 && numericTargetHours > 0) {
+    const lastBlock = validBlocks[validBlocks.length - 1];
+    let expectedEndMins = 0;
+
+    if (lastBlock.hasOut && lastBlock.out !== null) {
+      expectedEndMins = lastBlock.out + remainingLoggedInTime;
+    } else {
+      expectedEndMins = lastBlock.in + remainingLoggedInTime;
+    }
+
+    const expEndH = Math.floor(expectedEndMins / 60) % 24;
+    const expEndM = expectedEndMins % 60;
+    expectedEndStr = `${expEndH.toString().padStart(2, '0')}:${expEndM
+      .toString()
+      .padStart(2, '0')}`;
+  } else if (
+    remainingMins === 0 &&
+    validBlocks.length > 0 &&
+    numericTargetHours > 0
+  ) {
+    expectedEndStr = 'Feierabend! 🎉';
+  }
+
+  // Display strings based on calculations
+  const workedTimeStr = minsToTimeStr(effectiveWorked);
+  const remainingTimeStr = minsToTimeStr(remainingMins);
+  const autoBreakStr = `${autoPausesAppliedNow}m`;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <div className='min-h-screen bg-[linear-gradient(115deg,#94a3b8_0%,#cbd5e1_50%,#94a3b8_100%)] flex items-center justify-center p-4 font-sans text-slate-900'>
+      <div className='bg-white/85 backdrop-blur-md rounded-3xl shadow-2xl shadow-slate-300/40 p-6 md:p-8 w-full max-w-lg border border-slate-200'>
+        <h1 className='text-2xl font-bold mb-6 text-slate-900 tracking-tight'>
+          Arbeitsstunden-Rechner / Soll Zeit
+        </h1>
+
+        <div className='space-y-6'>
+          {/* Configuration Section */}
+          <div className='bg-white/70 p-4 rounded-2xl border border-slate-200 shadow-sm'>
+            <label className='block text-sm font-semibold text-slate-700 mb-2'>
+              Zielarbeitsstunden
+            </label>
+            <input
+              type='number'
+              step='0.5'
+              min='0'
+              max='24'
+              value={targetHours}
+              onChange={(e) => setTargetHours(e.target.value)}
+              className='w-full bg-slate-50 border border-slate-300 text-slate-900 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none'
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
+
+          {/* Dynamic Time Blocks Section */}
+          <div>
+            <div className='grid grid-cols-[1fr_1fr_40px] gap-4 mb-2 px-1'>
+              <label className='block text-sm font-medium text-slate-600'>
+                Log In
+              </label>
+              <label className='block text-sm font-medium text-slate-600'>
+                Log Out
+              </label>
+              <div></div>
+            </div>
+
+            <div className='space-y-3'>
+              {timeBlocks.map((block, index) => (
+                <div
+                  key={index}
+                  className='grid grid-cols-[1fr_1fr_40px] gap-4 items-center'
+                >
+                  <input
+                    type='time'
+                    value={block.login}
+                    onClick={(e) => {
+                      if ('showPicker' in HTMLInputElement.prototype) {
+                        e.currentTarget.showPicker();
+                      }
+                    }}
+                    onChange={(e) =>
+                      updateTimeBlock(index, 'login', e.target.value)
+                    }
+                    className='w-full relative cursor-pointer bg-white border border-slate-300 text-slate-900 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
+                    [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
+                  />
+                  <input
+                    type='time'
+                    value={block.logout}
+                    onClick={(e) => {
+                      if ('showPicker' in HTMLInputElement.prototype) {
+                        e.currentTarget.showPicker();
+                      }
+                    }}
+                    onChange={(e) =>
+                      updateTimeBlock(index, 'logout', e.target.value)
+                    }
+                    className='w-full relative cursor-pointer bg-white border border-slate-300 text-slate-900 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
+                    [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
+                  />
+                  {timeBlocks.length > 1 ? (
+                    <button
+                      onClick={() => removeTimeBlock(index)}
+                      className='text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex items-center justify-center h-full aspect-square'
+                      aria-label='Remove time block'
+                    >
+                      <svg
+                        xmlns='http://www.w3.org/2000/svg'
+                        className='h-5 w-5'
+                        fill='none'
+                        viewBox='0 0 24 24'
+                        stroke='currentColor'
+                      >
+                        <path
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                          strokeWidth={2}
+                          d='M6 18L18 6M6 6l12 12'
+                        />
+                      </svg>
+                    </button>
+                  ) : (
+                    <div />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={addTimeBlock}
+              className='mt-4 w-full py-3 border-2 border-dashed border-sky-300 text-sky-700 rounded-xl hover:bg-sky-50 hover:border-sky-400 font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer'
+            >
+              <svg
+                xmlns='http://www.w3.org/2000/svg'
+                className='h-5 w-5'
+                viewBox='0 0 20 20'
+                fill='currentColor'
+              >
+                <path
+                  fillRule='evenodd'
+                  d='M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z'
+                  clipRule='evenodd'
+                />
+              </svg>
+              Weitere Zeit hinzufügen
+            </button>
+          </div>
+
+          {/* Output Display */}
+          <div className='mt-8 space-y-3 pt-4 border-t border-slate-200'>
+            <div className='flex justify-between items-center p-4 bg-white border border-slate-200 shadow-sm rounded-2xl'>
+              <span className='text-sm font-medium text-slate-600'>
+                Effektive Arbeitszeit
+              </span>
+              <span className='text-lg font-bold text-slate-800'>
+                {workedTimeStr}
+              </span>
+            </div>
+
+            <div className='flex justify-between items-center p-4 bg-rose-50/80 rounded-2xl border border-rose-100 shadow-sm'>
+              <div className='flex flex-col'>
+                <span className='text-sm font-medium text-rose-800'>
+                  Automatische Pausen
+                </span>
+                <span className='text-xs text-rose-600'>
+                  (Abgezogen von effektiver Zeit)
+                </span>
+              </div>
+              <span className='text-lg font-bold text-rose-700'>
+                {autoBreakStr}
+              </span>
+            </div>
+
+            <div className='flex justify-between items-center p-4 bg-emerald-50/80 rounded-2xl border border-emerald-100 shadow-sm'>
+              <span className='text-sm font-medium text-emerald-800'>
+                Verbleibende Zeit
+              </span>
+              <span className='text-xl font-bold text-emerald-700'>
+                {remainingTimeStr}
+              </span>
+            </div>
+
+            <div className='flex justify-between items-center p-4 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-300/60 mt-4'>
+              <div className='flex flex-col'>
+                <span className='text-sm font-medium text-indigo-100'>
+                  Zielarbeitsende
+                </span>
+                <span className='text-xs text-indigo-200'>
+                  Dynamisch berechnet
+                </span>
+              </div>
+              <span className='text-3xl font-extrabold tracking-tight'>
+                {expectedEndStr}
+              </span>
+            </div>
+          </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
