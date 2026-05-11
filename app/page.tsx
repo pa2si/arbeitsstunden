@@ -12,8 +12,11 @@ export default function WorkTimeCalculator() {
   // Configuration - allow string so the user can completely clear the input
   const [targetHours, setTargetHours] = useState<number | string>(8);
 
+  // State for the collapsible details section
+  const [isDetailsOpen, setIsDetailsOpen] = useState<boolean>(false);
+
   // Dynamic Array for Time Blocks
-  // CHANGED: Initial logout is now empty so it calculates the end time automatically
+  // Initial logout is empty so it calculates the end time automatically
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([
     { login: '08:00', logout: '' },
   ]);
@@ -158,7 +161,6 @@ export default function WorkTimeCalculator() {
     if (lastBlock.hasOut && lastBlock.out !== null) {
       expectedEndMins = lastBlock.out + remainingLoggedInTime;
     } else {
-      // THIS is where the open-end calculation happens!
       expectedEndMins = lastBlock.in + remainingLoggedInTime;
       isActiveShift = true;
     }
@@ -237,7 +239,6 @@ export default function WorkTimeCalculator() {
                       className='w-full h-full relative cursor-pointer bg-white border border-slate-300 text-slate-900 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
                       [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
                     />
-                    {/* Clear Button for Log In */}
                     {block.login && (
                       <button
                         onClick={() => updateTimeBlock(index, 'login', '')}
@@ -277,7 +278,6 @@ export default function WorkTimeCalculator() {
                       className='w-full h-full relative cursor-pointer bg-white border border-slate-300 text-slate-900 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
                       [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
                     />
-                    {/* Clear Button for Log Out */}
                     {block.logout && (
                       <button
                         onClick={() => updateTimeBlock(index, 'logout', '')}
@@ -352,39 +352,8 @@ export default function WorkTimeCalculator() {
 
           {/* Output Display */}
           <div className='mt-8 space-y-3 pt-4 border-t border-slate-200'>
-            <div className='flex justify-between items-center p-4 bg-white border border-slate-200 shadow-sm rounded-2xl'>
-              <span className='text-sm font-medium text-slate-600'>
-                Effektive Arbeitszeit
-              </span>
-              <span className='text-lg font-bold text-slate-800'>
-                {workedTimeStr}
-              </span>
-            </div>
-
-            <div className='flex justify-between items-center p-4 bg-rose-50/80 rounded-2xl border border-rose-100 shadow-sm'>
-              <div className='flex flex-col'>
-                <span className='text-sm font-medium text-rose-800'>
-                  Automatische Pausen
-                </span>
-                <span className='text-xs text-rose-600'>
-                  (Abgezogen von effektiver Zeit)
-                </span>
-              </div>
-              <span className='text-lg font-bold text-rose-700'>
-                {autoBreakStr}
-              </span>
-            </div>
-
-            <div className='flex justify-between items-center p-4 bg-emerald-50/80 rounded-2xl border border-emerald-100 shadow-sm'>
-              <span className='text-sm font-medium text-emerald-800'>
-                Verbleibende Zeit
-              </span>
-              <span className='text-xl font-bold text-emerald-700'>
-                {remainingTimeStr}
-              </span>
-            </div>
-
-            <div className='flex justify-between items-center p-4 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-300/60 mt-4 relative overflow-hidden'>
+            {/* Main Primary Output: Always Visible */}
+            <div className='flex justify-between items-center p-4 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-300/60 relative overflow-hidden'>
               <div className='flex flex-col relative z-10'>
                 <span className='text-sm font-medium text-indigo-100'>
                   Arbeitsende
@@ -402,6 +371,64 @@ export default function WorkTimeCalculator() {
                 <div className='absolute top-0 right-0 w-full h-full bg-white opacity-5 rounded-2xl'></div>
               )}
             </div>
+
+            {/* Collapse Toggle Button */}
+            <button
+              onClick={() => setIsDetailsOpen(!isDetailsOpen)}
+              className='w-full flex items-center justify-between p-3 mt-2 text-sm font-medium text-slate-600 bg-white/50 hover:bg-white/80 border border-slate-200 rounded-xl transition-all'
+            >
+              <span>Details zur Berechnung</span>
+              <svg
+                className={`w-5 h-5 transition-transform duration-300 ${isDetailsOpen ? 'rotate-180' : ''}`}
+                fill='none'
+                viewBox='0 0 24 24'
+                stroke='currentColor'
+              >
+                <path
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  strokeWidth={2}
+                  d='M19 9l-7 7-7-7'
+                />
+              </svg>
+            </button>
+
+            {/* Collapsible Content Section */}
+            {isDetailsOpen && (
+              <div className='space-y-3 pt-2 animate-in fade-in slide-in-from-top-2 duration-300'>
+                <div className='flex justify-between items-center p-4 bg-white border border-slate-200 shadow-sm rounded-2xl'>
+                  <span className='text-sm font-medium text-slate-600'>
+                    Effektive Arbeitszeit
+                  </span>
+                  <span className='text-lg font-bold text-slate-800'>
+                    {workedTimeStr}
+                  </span>
+                </div>
+
+                <div className='flex justify-between items-center p-4 bg-rose-50/80 rounded-2xl border border-rose-100 shadow-sm'>
+                  <div className='flex flex-col'>
+                    <span className='text-sm font-medium text-rose-800'>
+                      Automatische Pausen
+                    </span>
+                    <span className='text-xs text-rose-600'>
+                      (Abgezogen von effektiver Zeit)
+                    </span>
+                  </div>
+                  <span className='text-lg font-bold text-rose-700'>
+                    {autoBreakStr}
+                  </span>
+                </div>
+
+                <div className='flex justify-between items-center p-4 bg-emerald-50/80 rounded-2xl border border-emerald-100 shadow-sm'>
+                  <span className='text-sm font-medium text-emerald-800'>
+                    Verbleibende Zeit
+                  </span>
+                  <span className='text-xl font-bold text-emerald-700'>
+                    {remainingTimeStr}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
