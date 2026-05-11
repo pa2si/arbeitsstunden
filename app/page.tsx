@@ -202,22 +202,38 @@ export default function WorkTimeCalculator() {
               max='24'
               value={targetHours}
               onChange={(e) => setTargetHours(e.target.value)}
-              className='w-full bg-slate-50 border border-slate-300 text-slate-900 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none'
+              className='w-full bg-slate-50 border border-slate-300 text-slate-900 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none appearance-none'
             />
           </div>
 
           {/* Dynamic Time Blocks Section */}
-          <div className='space-y-4'>
-            {timeBlocks.map((block, index) => (
-              <div key={index} className='flex items-end gap-4 sm:gap-6'>
-                {/* Log In Column */}
-                <div className='flex-1 relative'>
-                  {index === 0 && (
-                    <label className='block text-sm font-medium text-slate-600 mb-2 text-center'>
-                      Log In
-                    </label>
-                  )}
-                  <div className='relative w-full'>
+          <div>
+            {/* Headers row - dynamically sizes to match inputs below */}
+            <div
+              className={`grid gap-4 mb-2 px-1 ${timeBlocks.length > 1 ? 'grid-cols-[1fr_1fr_40px]' : 'grid-cols-2'}`}
+            >
+              <label className='block text-sm font-medium text-slate-600 text-center'>
+                Log In
+              </label>
+              <label className='block text-sm font-medium text-slate-600 text-center'>
+                Log Out
+              </label>
+              {timeBlocks.length > 1 && <div></div>}
+            </div>
+
+            <div className='space-y-3'>
+              {timeBlocks.map((block, index) => (
+                <div
+                  key={index}
+                  // CSS Grid fallback is fully robust on older iOS devices
+                  className={`grid gap-4 items-center ${
+                    timeBlocks.length > 1
+                      ? 'grid-cols-[1fr_1fr_40px]'
+                      : 'grid-cols-2'
+                  }`}
+                >
+                  {/* Log In Column */}
+                  <div className='relative w-full h-full'>
                     <input
                       type='time'
                       value={block.login}
@@ -229,14 +245,14 @@ export default function WorkTimeCalculator() {
                       onChange={(e) =>
                         updateTimeBlock(index, 'login', e.target.value)
                       }
-                      className='w-full text-center relative cursor-pointer bg-white border border-slate-300 text-slate-900 rounded-xl pl-2 pr-8 sm:px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
-                      [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
+                      className='w-full text-center relative cursor-pointer appearance-none bg-white border border-slate-300 text-slate-900 rounded-xl px-2 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
+                      [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:z-0'
                     />
                     {/* Clear Button */}
                     {block.login && (
                       <button
                         onClick={() => updateTimeBlock(index, 'login', '')}
-                        className='absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 z-10 p-1 bg-white rounded-md'
+                        className='absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 z-20 p-1 bg-white rounded-md'
                         aria-label='Clear time'
                       >
                         <svg
@@ -256,16 +272,9 @@ export default function WorkTimeCalculator() {
                       </button>
                     )}
                   </div>
-                </div>
 
-                {/* Log Out Column */}
-                <div className='flex-1 relative'>
-                  {index === 0 && (
-                    <label className='block text-sm font-medium text-slate-600 mb-2 text-center'>
-                      Log Out
-                    </label>
-                  )}
-                  <div className='relative w-full'>
+                  {/* Log Out Column */}
+                  <div className='relative w-full h-full'>
                     <input
                       type='time'
                       value={block.logout}
@@ -277,14 +286,14 @@ export default function WorkTimeCalculator() {
                       onChange={(e) =>
                         updateTimeBlock(index, 'logout', e.target.value)
                       }
-                      className='w-full text-center relative cursor-pointer bg-white border border-slate-300 text-slate-900 rounded-xl pl-2 pr-8 sm:px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
-                      [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
+                      className='w-full text-center relative cursor-pointer appearance-none bg-white border border-slate-300 text-slate-900 rounded-xl px-2 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
+                      [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:z-0'
                     />
                     {/* Clear Button */}
                     {block.logout && (
                       <button
                         onClick={() => updateTimeBlock(index, 'logout', '')}
-                        className='absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 z-10 p-1 bg-white rounded-md'
+                        className='absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 z-20 p-1 bg-white rounded-md'
                         aria-label='Clear time'
                       >
                         <svg
@@ -304,14 +313,12 @@ export default function WorkTimeCalculator() {
                       </button>
                     )}
                   </div>
-                </div>
 
-                {/* Delete Button (Only shows if > 1 block) */}
-                {timeBlocks.length > 1 && (
-                  <div className='mb-0.5 shrink-0'>
+                  {/* Delete Row Button */}
+                  {timeBlocks.length > 1 && (
                     <button
                       onClick={() => removeTimeBlock(index)}
-                      className='text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex items-center justify-center h-10 w-10'
+                      className='text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex items-center justify-center h-10 w-10 mx-auto'
                       aria-label='Remove time block'
                     >
                       <svg
@@ -329,14 +336,14 @@ export default function WorkTimeCalculator() {
                         />
                       </svg>
                     </button>
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                </div>
+              ))}
+            </div>
 
             <button
               onClick={addTimeBlock}
-              className='mt-2 w-full py-3 border-2 border-dashed border-sky-300 text-sky-700 rounded-xl hover:bg-sky-50 hover:border-sky-400 font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer'
+              className='mt-4 w-full py-3 border-2 border-dashed border-sky-300 text-sky-700 rounded-xl hover:bg-sky-50 hover:border-sky-400 font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer'
             >
               <svg
                 xmlns='http://www.w3.org/2000/svg'
