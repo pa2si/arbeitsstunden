@@ -13,8 +13,9 @@ export default function WorkTimeCalculator() {
   const [targetHours, setTargetHours] = useState<number | string>(8);
 
   // Dynamic Array for Time Blocks
+  // CHANGED: Initial logout is now empty so it calculates the end time automatically
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([
-    { login: '08:00', logout: '16:00' },
+    { login: '08:00', logout: '' },
   ]);
 
   // Handlers for dynamic rows
@@ -26,7 +27,6 @@ export default function WorkTimeCalculator() {
     setTimeBlocks(timeBlocks.filter((_, index) => index !== indexToRemove));
   };
 
-  // Ensure 'field' only accepts the keys from our TimeBlock type
   const updateTimeBlock = (
     index: number,
     field: keyof TimeBlock,
@@ -149,6 +149,7 @@ export default function WorkTimeCalculator() {
   const remainingLoggedInTime = totalLoggedInTimeNeeded - rawWorked;
 
   let expectedEndStr = '--:--';
+  let isActiveShift = false;
 
   if (validBlocks.length > 0 && remainingMins > 0 && numericTargetHours > 0) {
     const lastBlock = validBlocks[validBlocks.length - 1];
@@ -157,7 +158,9 @@ export default function WorkTimeCalculator() {
     if (lastBlock.hasOut && lastBlock.out !== null) {
       expectedEndMins = lastBlock.out + remainingLoggedInTime;
     } else {
+      // THIS is where the open-end calculation happens!
       expectedEndMins = lastBlock.in + remainingLoggedInTime;
+      isActiveShift = true;
     }
 
     const expEndH = Math.floor(expectedEndMins / 60) % 24;
@@ -173,7 +176,6 @@ export default function WorkTimeCalculator() {
     expectedEndStr = 'Feierabend! 🎉';
   }
 
-  // Display strings based on calculations
   const workedTimeStr = minsToTimeStr(effectiveWorked);
   const remainingTimeStr = minsToTimeStr(remainingMins);
   const autoBreakStr = `${autoPausesAppliedNow}m`;
@@ -182,7 +184,7 @@ export default function WorkTimeCalculator() {
     <div className='min-h-screen bg-[linear-gradient(115deg,#94a3b8_0%,#cbd5e1_50%,#94a3b8_100%)] flex items-center justify-center p-4 font-sans text-slate-900'>
       <div className='bg-white/85 backdrop-blur-md rounded-3xl shadow-2xl shadow-slate-300/40 p-6 md:p-8 w-full max-w-lg border border-slate-200'>
         <h1 className='text-2xl font-bold mb-6 text-slate-900 tracking-tight'>
-          Arbeitsstunden-Rechner / Soll Zeit
+          Soll Arbeitsstunden
         </h1>
 
         <div className='space-y-6'>
@@ -220,34 +222,86 @@ export default function WorkTimeCalculator() {
                   key={index}
                   className='grid grid-cols-[1fr_1fr_40px] gap-4 items-center'
                 >
-                  <input
-                    type='time'
-                    value={block.login}
-                    onClick={(e) => {
-                      if ('showPicker' in HTMLInputElement.prototype) {
-                        e.currentTarget.showPicker();
+                  <div className='relative w-full h-full'>
+                    <input
+                      type='time'
+                      value={block.login}
+                      onClick={(e) => {
+                        if ('showPicker' in HTMLInputElement.prototype) {
+                          e.currentTarget.showPicker();
+                        }
+                      }}
+                      onChange={(e) =>
+                        updateTimeBlock(index, 'login', e.target.value)
                       }
-                    }}
-                    onChange={(e) =>
-                      updateTimeBlock(index, 'login', e.target.value)
-                    }
-                    className='w-full relative cursor-pointer bg-white border border-slate-300 text-slate-900 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
-                    [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
-                  />
-                  <input
-                    type='time'
-                    value={block.logout}
-                    onClick={(e) => {
-                      if ('showPicker' in HTMLInputElement.prototype) {
-                        e.currentTarget.showPicker();
+                      className='w-full h-full relative cursor-pointer bg-white border border-slate-300 text-slate-900 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
+                      [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
+                    />
+                    {/* Clear Button for Log In */}
+                    {block.login && (
+                      <button
+                        onClick={() => updateTimeBlock(index, 'login', '')}
+                        className='absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 z-10 p-1 bg-white'
+                        aria-label='Clear time'
+                      >
+                        <svg
+                          xmlns='http://www.w3.org/2000/svg'
+                          className='h-4 w-4'
+                          fill='none'
+                          viewBox='0 0 24 24'
+                          stroke='currentColor'
+                        >
+                          <path
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                            strokeWidth={2}
+                            d='M6 18L18 6M6 6l12 12'
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className='relative w-full h-full'>
+                    <input
+                      type='time'
+                      value={block.logout}
+                      onClick={(e) => {
+                        if ('showPicker' in HTMLInputElement.prototype) {
+                          e.currentTarget.showPicker();
+                        }
+                      }}
+                      onChange={(e) =>
+                        updateTimeBlock(index, 'logout', e.target.value)
                       }
-                    }}
-                    onChange={(e) =>
-                      updateTimeBlock(index, 'logout', e.target.value)
-                    }
-                    className='w-full relative cursor-pointer bg-white border border-slate-300 text-slate-900 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
-                    [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
-                  />
+                      className='w-full h-full relative cursor-pointer bg-white border border-slate-300 text-slate-900 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
+                      [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
+                    />
+                    {/* Clear Button for Log Out */}
+                    {block.logout && (
+                      <button
+                        onClick={() => updateTimeBlock(index, 'logout', '')}
+                        className='absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 z-10 p-1 bg-white'
+                        aria-label='Clear time'
+                      >
+                        <svg
+                          xmlns='http://www.w3.org/2000/svg'
+                          className='h-4 w-4'
+                          fill='none'
+                          viewBox='0 0 24 24'
+                          stroke='currentColor'
+                        >
+                          <path
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                            strokeWidth={2}
+                            d='M6 18L18 6M6 6l12 12'
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+
                   {timeBlocks.length > 1 ? (
                     <button
                       onClick={() => removeTimeBlock(index)}
@@ -330,18 +384,23 @@ export default function WorkTimeCalculator() {
               </span>
             </div>
 
-            <div className='flex justify-between items-center p-4 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-300/60 mt-4'>
-              <div className='flex flex-col'>
+            <div className='flex justify-between items-center p-4 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-300/60 mt-4 relative overflow-hidden'>
+              <div className='flex flex-col relative z-10'>
                 <span className='text-sm font-medium text-indigo-100'>
-                  Zielarbeitsende
+                  Arbeitsende
                 </span>
                 <span className='text-xs text-indigo-200'>
-                  Dynamisch berechnet
+                  {isActiveShift
+                    ? 'Läuft: Projektion von Log In'
+                    : 'Dynamisch berechnet'}
                 </span>
               </div>
-              <span className='text-3xl font-extrabold tracking-tight'>
+              <span className='text-3xl font-extrabold tracking-tight relative z-10 '>
                 {expectedEndStr}
               </span>
+              {isActiveShift && (
+                <div className='absolute top-0 right-0 w-full h-full bg-white opacity-5 rounded-2xl'></div>
+              )}
             </div>
           </div>
         </div>
