@@ -513,16 +513,24 @@ export default function WorkTimeCalculator() {
                   </span>
                 </div>
 
-                <div className='flex justify-between items-center p-4 bg-amber-50/80 rounded-2xl border border-amber-200 shadow-sm'>
+                <div
+                  className={`flex justify-between items-center p-4 rounded-2xl border shadow-sm ${autoPausesAppliedNow === 0 ? 'bg-slate-100/80 border-slate-200' : 'bg-amber-50/80 border-amber-200'}`}
+                >
                   <div className='flex flex-col'>
-                    <span className='text-sm font-medium text-amber-800'>
+                    <span
+                      className={`text-sm font-medium ${autoPausesAppliedNow === 0 ? 'text-slate-500' : 'text-amber-800'}`}
+                    >
                       Automatische Pausen
                     </span>
-                    <span className='text-xs text-amber-600'>
+                    <span
+                      className={`text-xs ${autoPausesAppliedNow === 0 ? 'text-slate-400' : 'text-amber-600'}`}
+                    >
                       (Abgezogen von effektiver Zeit)
                     </span>
                   </div>
-                  <span className='text-lg font-bold text-amber-700'>
+                  <span
+                    className={`text-lg font-bold ${autoPausesAppliedNow === 0 ? 'text-slate-400' : 'text-amber-700'}`}
+                  >
                     {autoBreakStr}
                   </span>
                 </div>
