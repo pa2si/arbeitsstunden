@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 // 1. Define the TypeScript type for our time blocks
 type TimeBlock = {
@@ -9,17 +9,72 @@ type TimeBlock = {
 };
 
 export default function WorkTimeCalculator() {
-  // Configuration - allow string so the user can completely clear the input
+  // Configuration
   const [targetHours, setTargetHours] = useState<number | string>(8);
 
   // State for the collapsible details section
   const [isDetailsOpen, setIsDetailsOpen] = useState<boolean>(false);
 
   // Dynamic Array for Time Blocks
-  // Initial logout is empty so it calculates the end time automatically
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([
     { login: '08:00', logout: '' },
   ]);
+
+  // We track if the initial load from LocalStorage is done.
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // ==========================================
+  // LOCAL STORAGE: Load Data (Runs once on mount)
+  // ==========================================
+  useEffect(() => {
+    // Wrapping the logic in setTimeout pushes it to the end of the execution queue.
+    // This makes it asynchronous, completely fixing the "synchronous setState in effect" error!
+    const timer = setTimeout(() => {
+      const savedData = localStorage.getItem('workTimeTrackerData');
+
+      if (savedData) {
+        try {
+          const parsed = JSON.parse(savedData);
+          const savedTimestamp = parsed.timestamp;
+          const now = Date.now();
+
+          // Calculate 12 hours in milliseconds (12 hours * 60 min * 60 sec * 1000 ms)
+          const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
+
+          // Check if the data is less than 12 hours old
+          if (now - savedTimestamp < TWELVE_HOURS_MS) {
+            setTargetHours(parsed.targetHours);
+            setTimeBlocks(parsed.timeBlocks);
+          } else {
+            // If it's older than 12 hours, delete it
+            localStorage.removeItem('workTimeTrackerData');
+          }
+        } catch (error) {
+          console.error('Error parsing local storage data', error);
+        }
+      }
+
+      // Mark as loaded to remove the loading spinner
+      setIsLoaded(true);
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // ==========================================
+  // LOCAL STORAGE: Save Data (Runs when inputs change)
+  // ==========================================
+  useEffect(() => {
+    // Only save to local storage IF we have already finished the initial load
+    if (isLoaded) {
+      const dataToSave = {
+        targetHours,
+        timeBlocks,
+        timestamp: Date.now(), // Save the exact moment it was last updated
+      };
+      localStorage.setItem('workTimeTrackerData', JSON.stringify(dataToSave));
+    }
+  }, [targetHours, timeBlocks, isLoaded]);
 
   // Handlers for dynamic rows
   const addTimeBlock = () => {
@@ -57,9 +112,41 @@ export default function WorkTimeCalculator() {
   };
 
   // ==========================================
+  // Render Loading State (Prevents UI Flash)
+  // ==========================================
+  if (!isLoaded) {
+    return (
+      <div className='min-h-dvh bg-[linear-gradient(115deg,#94a3b8_0%,#cbd5e1_50%,#94a3b8_100%)] flex flex-col items-center justify-center p-4 font-sans'>
+        <svg
+          className='animate-spin h-10 w-10 text-white/80 mb-4'
+          xmlns='http://www.w3.org/2000/svg'
+          fill='none'
+          viewBox='0 0 24 24'
+        >
+          <circle
+            className='opacity-25'
+            cx='12'
+            cy='12'
+            r='10'
+            stroke='currentColor'
+            strokeWidth='4'
+          ></circle>
+          <path
+            className='opacity-75'
+            fill='currentColor'
+            d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'
+          ></path>
+        </svg>
+        <span className='text-white/90 font-medium tracking-wide animate-pulse'>
+          Lade Arbeitszeiten...
+        </span>
+      </div>
+    );
+  }
+
+  // ==========================================
   // CALCULATIONS (Derived directly during render)
   // ==========================================
-
   let rawWorked = 0;
   let totalManualGaps = 0;
 
@@ -184,7 +271,7 @@ export default function WorkTimeCalculator() {
 
   return (
     <div className='min-h-dvh bg-[linear-gradient(115deg,#94a3b8_0%,#cbd5e1_50%,#94a3b8_100%)] flex items-center justify-center p-4 font-sans text-slate-900'>
-      <div className='bg-white/85 backdrop-blur-md rounded-3xl shadow-2xl shadow-slate-300/40 p-6 md:p-8 w-full max-w-lg border border-slate-200'>
+      <div className='bg-white/85 backdrop-blur-md rounded-3xl shadow-2xl shadow-slate-300/40 p-6 md:p-8 w-full max-w-lg border border-slate-200 animate-in fade-in duration-500'>
         <h1 className='text-2xl font-bold mb-6 text-slate-900 tracking-tight'>
           Soll Arbeitsstunden
         </h1>
@@ -364,17 +451,21 @@ export default function WorkTimeCalculator() {
           {/* Output Display */}
           <div className='mt-8 space-y-3 pt-4 border-t border-slate-200'>
             {/* Main Primary Output: Always Visible */}
-            <div className='flex justify-between items-center p-4 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-300/60 relative overflow-hidden'>
-              <div className='flex flex-col relative z-10'>
-                <span className='text-sm font-medium text-indigo-100'>
-                  Arbeitsende
-                </span>
-                <span className='text-xs text-indigo-200'>
-                  {isActiveShift
-                    ? 'Läuft: Projektion von Log In'
-                    : 'Dynamisch berechnet'}
-                </span>
-              </div>
+            <div
+              className={`flex items-center p-4 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-300/60 relative overflow-hidden ${remainingMins === 0 && numericTargetHours > 0 ? 'justify-center' : 'justify-between'}`}
+            >
+              {!(remainingMins === 0 && numericTargetHours > 0) && (
+                <div className='flex flex-col relative z-10'>
+                  <span className='text-sm font-medium text-indigo-100'>
+                    Arbeitsende
+                  </span>
+                  <span className='text-xs text-indigo-200'>
+                    {isActiveShift
+                      ? 'Läuft: Projektion von Log In'
+                      : 'Dynamisch berechnet'}
+                  </span>
+                </div>
+              )}
               <span className='text-3xl font-extrabold tracking-tight relative z-10 '>
                 {expectedEndStr}
               </span>
@@ -407,34 +498,46 @@ export default function WorkTimeCalculator() {
             {/* Collapsible Content Section */}
             {isDetailsOpen && (
               <div className='space-y-3 pt-2 animate-in fade-in slide-in-from-top-2 duration-300'>
-                <div className='flex justify-between items-center p-4 bg-white border border-slate-200 shadow-sm rounded-2xl'>
-                  <span className='text-sm font-medium text-slate-600'>
+                <div
+                  className={`flex justify-between items-center p-4 rounded-2xl border shadow-sm ${remainingMins === 0 && numericTargetHours > 0 ? 'bg-emerald-50/80 border-emerald-100' : 'bg-white border-slate-200'}`}
+                >
+                  <span
+                    className={`text-sm font-medium ${remainingMins === 0 && numericTargetHours > 0 ? 'text-emerald-800' : 'text-slate-600'}`}
+                  >
                     Effektive Arbeitszeit
                   </span>
-                  <span className='text-lg font-bold text-slate-800'>
+                  <span
+                    className={`text-lg font-bold ${remainingMins === 0 && numericTargetHours > 0 ? 'text-emerald-700' : 'text-slate-800'}`}
+                  >
                     {workedTimeStr}
                   </span>
                 </div>
 
-                <div className='flex justify-between items-center p-4 bg-rose-50/80 rounded-2xl border border-rose-100 shadow-sm'>
+                <div className='flex justify-between items-center p-4 bg-amber-50/80 rounded-2xl border border-amber-200 shadow-sm'>
                   <div className='flex flex-col'>
-                    <span className='text-sm font-medium text-rose-800'>
+                    <span className='text-sm font-medium text-amber-800'>
                       Automatische Pausen
                     </span>
-                    <span className='text-xs text-rose-600'>
+                    <span className='text-xs text-amber-600'>
                       (Abgezogen von effektiver Zeit)
                     </span>
                   </div>
-                  <span className='text-lg font-bold text-rose-700'>
+                  <span className='text-lg font-bold text-amber-700'>
                     {autoBreakStr}
                   </span>
                 </div>
 
-                <div className='flex justify-between items-center p-4 bg-emerald-50/80 rounded-2xl border border-emerald-100 shadow-sm'>
-                  <span className='text-sm font-medium text-emerald-800'>
+                <div
+                  className={`flex justify-between items-center p-4 rounded-2xl border shadow-sm ${remainingMins === 0 && numericTargetHours > 0 ? 'bg-slate-100/80 border-slate-200' : 'bg-rose-50/80 border-rose-100'}`}
+                >
+                  <span
+                    className={`text-sm font-medium ${remainingMins === 0 && numericTargetHours > 0 ? 'text-slate-400' : 'text-rose-800'}`}
+                  >
                     Verbleibende Zeit
                   </span>
-                  <span className='text-xl font-bold text-emerald-700'>
+                  <span
+                    className={`text-xl font-bold ${remainingMins === 0 && numericTargetHours > 0 ? 'text-slate-400' : 'text-rose-700'}`}
+                  >
                     {remainingTimeStr}
                   </span>
                 </div>
