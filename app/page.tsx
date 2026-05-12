@@ -280,7 +280,7 @@ export default function WorkTimeCalculator() {
           {/* Configuration Section */}
           <div className='bg-white/70 p-4 rounded-2xl border border-slate-200 shadow-sm'>
             <label className='block text-sm font-semibold text-slate-700 mb-2'>
-              Zielarbeitsstunden
+              🗓️ Geplante Stunden
             </label>
             <input
               type='number'
@@ -300,10 +300,10 @@ export default function WorkTimeCalculator() {
               className={`grid gap-4 mb-2 px-1 ${timeBlocks.length > 1 ? 'grid-cols-[1fr_1fr_40px]' : 'grid-cols-2'}`}
             >
               <label className='block text-sm font-medium text-slate-600 text-center'>
-                Log In
+                🕒 Log In
               </label>
               <label className='block text-sm font-medium text-slate-600 text-center'>
-                Log Out
+                🕒 Log Out
               </label>
               {timeBlocks.length > 1 && <div></div>}
             </div>
@@ -479,7 +479,7 @@ export default function WorkTimeCalculator() {
               onClick={() => setIsDetailsOpen(!isDetailsOpen)}
               className='w-full flex items-center justify-between p-3 mt-2 text-sm font-medium text-slate-600 bg-white/50 hover:bg-white/80 border border-slate-200 rounded-xl transition-all'
             >
-              <span>Details zur Berechnung</span>
+              <span>📋 Details zur Berechnung</span>
               <svg
                 className={`w-5 h-5 transition-transform duration-300 ${isDetailsOpen ? 'rotate-180' : ''}`}
                 fill='none'
