@@ -183,7 +183,7 @@ export default function WorkTimeCalculator() {
   const autoBreakStr = `${autoPausesAppliedNow}m`;
 
   return (
-    <div className='min-dvh bg-[linear-gradient(115deg,#94a3b8_0%,#cbd5e1_50%,#94a3b8_100%)] flex items-center justify-center p-4 font-sans text-slate-900'>
+    <div className='min-h-dvh bg-[linear-gradient(115deg,#94a3b8_0%,#cbd5e1_50%,#94a3b8_100%)] flex items-center justify-center p-4 font-sans text-slate-900'>
       <div className='bg-white/85 backdrop-blur-md rounded-3xl shadow-2xl shadow-slate-300/40 p-6 md:p-8 w-full max-w-lg border border-slate-200'>
         <h1 className='text-2xl font-bold mb-6 text-slate-900 tracking-tight'>
           Soll Arbeitsstunden
