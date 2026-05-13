@@ -16,19 +16,34 @@ export default function WorkTimeCalculator() {
   const [isDetailsOpen, setIsDetailsOpen] = useState<boolean>(false);
 
   // Dynamic Array for Time Blocks
+  // CHANGED: Initial login is now also empty when there is no local storage
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([
-    { login: '08:00', logout: '' },
+    { login: '', logout: '' },
   ]);
 
   // We track if the initial load from LocalStorage is done.
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // State to drive real-time minute-by-minute updates
+  const [now, setNow] = useState<Date>(new Date());
+
+  // ==========================================
+  // REAL-TIME CLOCK: Ticks every 30 seconds
+  // ==========================================
+  useEffect(() => {
+    // We removed the immediate setNow() because the state is already initialized with new Date().
+    // Just start the interval to update it every 30 seconds from now on!
+    const interval = setInterval(() => {
+      setNow(new Date());
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   // ==========================================
   // LOCAL STORAGE: Load Data (Runs once on mount)
   // ==========================================
   useEffect(() => {
-    // Wrapping the logic in setTimeout pushes it to the end of the execution queue.
-    // This makes it asynchronous, completely fixing the "synchronous setState in effect" error!
     const timer = setTimeout(() => {
       const savedData = localStorage.getItem('workTimeTrackerData');
 
@@ -36,13 +51,13 @@ export default function WorkTimeCalculator() {
         try {
           const parsed = JSON.parse(savedData);
           const savedTimestamp = parsed.timestamp;
-          const now = Date.now();
+          const currentTimestamp = Date.now();
 
           // Calculate 12 hours in milliseconds (12 hours * 60 min * 60 sec * 1000 ms)
           const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
 
           // Check if the data is less than 12 hours old
-          if (now - savedTimestamp < TWELVE_HOURS_MS) {
+          if (currentTimestamp - savedTimestamp < TWELVE_HOURS_MS) {
             setTargetHours(parsed.targetHours);
             setTimeBlocks(parsed.timeBlocks);
           } else {
@@ -150,10 +165,13 @@ export default function WorkTimeCalculator() {
   let rawWorked = 0;
   let totalManualGaps = 0;
 
+  const currentMinsNow = now.getHours() * 60 + now.getMinutes();
+
   const validBlocks = [];
   for (const block of timeBlocks) {
     const inMins = timeToMins(block.login);
     const outMins = timeToMins(block.logout);
+    // Even if logout is empty, if login exists, it's a valid active block
     if (inMins !== null) {
       validBlocks.push({ in: inMins, out: outMins, hasOut: outMins !== null });
     }
@@ -161,11 +179,25 @@ export default function WorkTimeCalculator() {
 
   for (let i = 0; i < validBlocks.length; i++) {
     const block = validBlocks[i];
+
     if (block.hasOut && block.out !== null) {
+      // Completed block
       let duration = block.out - block.in;
-      if (duration < 0) duration += 24 * 60;
+      if (duration < 0) duration += 24 * 60; // Overnight
+      rawWorked += duration;
+    } else {
+      // CHANGED: Active block (real-time tracking)
+      let duration = currentMinsNow - block.in;
+      if (duration < 0) {
+        duration += 24 * 60;
+        // Safety heuristic: If duration indicates a 16+ hour shift because the user
+        // accidentally typed a *future* time for today, ignore it until time catches up.
+        if (duration > 16 * 60) duration = 0;
+      }
       rawWorked += duration;
     }
+
+    // Manual gaps calculation
     if (i > 0) {
       const prevBlock = validBlocks[i - 1];
       if (prevBlock.hasOut && prevBlock.out !== null) {
@@ -180,6 +212,7 @@ export default function WorkTimeCalculator() {
   let A = 0; // Auto Pauses
   let rem = rawWorked;
 
+  // Waterfall distribution logic
   if (rem <= 360) {
     E = rem;
     rem = 0;
@@ -235,6 +268,8 @@ export default function WorkTimeCalculator() {
     0,
     projectedRequiredBreak - totalManualGaps,
   );
+
+  // Total logged-in time required minus what has *already* been worked (including real-time open shifts)
   const totalLoggedInTimeNeeded = targetMins + totalAutoPausesForTarget;
   const remainingLoggedInTime = totalLoggedInTimeNeeded - rawWorked;
 
@@ -248,7 +283,8 @@ export default function WorkTimeCalculator() {
     if (lastBlock.hasOut && lastBlock.out !== null) {
       expectedEndMins = lastBlock.out + remainingLoggedInTime;
     } else {
-      expectedEndMins = lastBlock.in + remainingLoggedInTime;
+      // CHANGED: For active shifts, project from the *current* minute since rawWorked includes it
+      expectedEndMins = currentMinsNow + remainingLoggedInTime;
       isActiveShift = true;
     }
 
