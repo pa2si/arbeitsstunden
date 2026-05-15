@@ -305,6 +305,17 @@ export default function WorkTimeCalculator() {
   const remainingTimeStr = minsToTimeStr(remainingMins);
   const autoBreakStr = `${autoPausesAppliedNow}m`;
 
+  // Hints for actively running auto-pause phases
+  const totalBreakSoFar = totalManualGaps + autoPausesAppliedNow;
+  // Phase 1 (toward 30 min): auto pause started but total break hasn't reached 30 min yet
+  const showPause30Hint = autoPausesAppliedNow > 0 && totalBreakSoFar < 30;
+  // Phase 2 (toward 45 min): past 8h, total break is between 30 and 45 min and auto pause is running
+  const showPause45Hint =
+    autoPausesAppliedNow > 0 &&
+    totalBreakSoFar >= 30 &&
+    totalBreakSoFar < 45 &&
+    rawWorked > 480;
+
   return (
     <div className='min-h-dvh bg-[linear-gradient(115deg,#94a3b8_0%,#cbd5e1_50%,#94a3b8_100%)] flex items-center justify-center p-4 font-sans text-slate-900'>
       <div className='bg-white/85 backdrop-blur-md rounded-3xl shadow-2xl shadow-slate-300/40 p-6 md:p-8 w-full max-w-lg border border-slate-200 animate-in fade-in duration-500'>
@@ -564,11 +575,18 @@ export default function WorkTimeCalculator() {
                       (Abgezogen von effektiver Zeit)
                     </span>
                   </div>
-                  <span
-                    className={`text-lg font-bold ${autoPausesAppliedNow === 0 ? 'text-slate-400' : 'text-amber-700'}`}
-                  >
-                    {autoBreakStr}
-                  </span>
+                  <div className='flex flex-col items-end'>
+                    <span
+                      className={`text-lg font-bold ${autoPausesAppliedNow === 0 ? 'text-slate-400' : 'text-amber-700'}`}
+                    >
+                      {autoBreakStr}
+                    </span>
+                    {(showPause30Hint || showPause45Hint) && (
+                      <span className='text-xs text-amber-500 font-medium'>
+                        {showPause30Hint ? 'von 30 min' : 'von 45 min'}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div
