@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Arbeitsstunden-Rechner / Soll Zeit',
-  description: 'Arbeitsstunden-Rechner / Soll Zeit',
+  title: 'Arbeitsstunden-Rechner für Soll Zeit',
+  description: 'Arbeitsstunden-Rechner für Soll Zeit',
 };
 
 export default function RootLayout({
