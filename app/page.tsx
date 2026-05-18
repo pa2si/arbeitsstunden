@@ -304,6 +304,9 @@ export default function WorkTimeCalculator() {
   const workedTimeStr = minsToTimeStr(effectiveWorked);
   const remainingTimeStr = minsToTimeStr(remainingMins);
   const autoBreakStr = `${autoPausesAppliedNow}m`;
+  const hasOpenBlock = validBlocks.some((block) => !block.hasOut);
+  const shouldMuteRemainingTime =
+    numericTargetHours === 0 || (remainingMins === 0 && numericTargetHours > 0);
 
   // Hints for actively running auto-pause phases
   const totalBreakSoFar = totalManualGaps + autoPausesAppliedNow;
@@ -551,7 +554,7 @@ export default function WorkTimeCalculator() {
                   <span
                     className={`text-sm font-medium ${remainingMins === 0 && numericTargetHours > 0 ? 'text-emerald-800' : 'text-slate-600'}`}
                   >
-                    Effektive Arbeitszeit
+                    Effektive Arbeitszeit {hasOpenBlock ? '(bisher)' : ''}
                   </span>
                   <span
                     className={`text-lg font-bold ${remainingMins === 0 && numericTargetHours > 0 ? 'text-emerald-700' : 'text-slate-800'}`}
@@ -567,12 +570,12 @@ export default function WorkTimeCalculator() {
                     <span
                       className={`text-sm font-medium ${autoPausesAppliedNow === 0 ? 'text-slate-500' : 'text-amber-800'}`}
                     >
-                      Automatische Pausen
+                      Automatische Pause
                     </span>
                     <span
                       className={`text-xs ${autoPausesAppliedNow === 0 ? 'text-slate-400' : 'text-amber-600'}`}
                     >
-                      (Abgezogen von effektiver Zeit)
+                      (Abgezogen von effektiver Arbeitszeit)
                     </span>
                   </div>
                   <div className='flex flex-col items-end'>
@@ -590,15 +593,15 @@ export default function WorkTimeCalculator() {
                 </div>
 
                 <div
-                  className={`flex justify-between items-center p-4 rounded-2xl border shadow-sm ${remainingMins === 0 && numericTargetHours > 0 ? 'bg-slate-100/80 border-slate-200' : 'bg-rose-50/80 border-rose-100'}`}
+                  className={`flex justify-between items-center p-4 rounded-2xl border shadow-sm ${shouldMuteRemainingTime ? 'bg-slate-100/80 border-slate-200' : 'bg-rose-50/80 border-rose-100'}`}
                 >
                   <span
-                    className={`text-sm font-medium ${remainingMins === 0 && numericTargetHours > 0 ? 'text-slate-400' : 'text-rose-800'}`}
+                    className={`text-sm font-medium ${shouldMuteRemainingTime ? 'text-slate-400' : 'text-rose-800'}`}
                   >
                     Verbleibende Zeit
                   </span>
                   <span
-                    className={`text-xl font-bold ${remainingMins === 0 && numericTargetHours > 0 ? 'text-slate-400' : 'text-rose-700'}`}
+                    className={`text-xl font-bold ${shouldMuteRemainingTime ? 'text-slate-400' : 'text-rose-700'}`}
                   >
                     {remainingTimeStr}
                   </span>
