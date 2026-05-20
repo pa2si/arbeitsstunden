@@ -282,9 +282,6 @@ export default function WorkTimeCalculator() {
   const breakBreakdown = [];
   let accountedBreak = 0;
 
-  // Iterate through the timeline:
-  // 1. Check for Auto deductions in the current block
-  // 2. Check for Manual gap AFTER the current block
   for (let i = 0; i < validBlocks.length; i++) {
     const blockIndex = i + 1;
     const remainingBreakNeeded = Math.max(
@@ -319,6 +316,8 @@ export default function WorkTimeCalculator() {
       }
     }
   }
+
+  const hasActivePause = breakBreakdown.length > 0;
 
   return (
     <div className='min-h-dvh bg-[linear-gradient(115deg,#94a3b8_0%,#cbd5e1_50%,#94a3b8_100%)] flex items-center justify-center p-4 font-sans text-slate-900'>
@@ -603,9 +602,13 @@ export default function WorkTimeCalculator() {
                   </div>
                 )}
 
-                {/* 3. Gesetzliche Pausen (Anrechnung) - Maps out exactly how 30m/45m was fulfilled */}
-                <div className='bg-amber-50/80 border border-amber-200 p-4 rounded-2xl shadow-sm space-y-3'>
-                  <div className='flex items-center justify-between text-sm font-semibold text-amber-800 mb-1'>
+                {/* 3. Gesetzliche Pausen (Anrechnung) - Now dynamically styled! */}
+                <div
+                  className={`p-4 rounded-2xl border shadow-sm space-y-3 ${hasActivePause ? 'bg-amber-50/80 border-amber-200' : 'bg-slate-50/80 border-slate-200'}`}
+                >
+                  <div
+                    className={`flex items-center justify-between text-sm font-semibold mb-1 ${hasActivePause ? 'text-amber-800' : 'text-slate-600'}`}
+                  >
                     <div className='flex items-center'>
                       <svg
                         xmlns='http://www.w3.org/2000/svg'
@@ -622,8 +625,10 @@ export default function WorkTimeCalculator() {
                       Anrechnung Gesetzliche Pause
                     </div>
                     {expectedLegalBreak > 0 && (
-                      <span className='text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200'>
-                        Ziel: {expectedLegalBreak}m
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-md border ${hasActivePause ? 'text-amber-600 bg-amber-100 border-amber-200' : 'text-slate-500 bg-slate-100 border-slate-200'}`}
+                      >
+                        Von: {expectedLegalBreak}m
                       </span>
                     )}
                   </div>
@@ -653,10 +658,10 @@ export default function WorkTimeCalculator() {
 
                   {breakBreakdown.length === 0 && (
                     <div className='flex justify-between items-center text-sm'>
-                      <span className='text-amber-700'>
+                      <span className='text-slate-500'>
                         Kein Abzug notwendig
                       </span>
-                      <span className='font-bold text-amber-700'>0m</span>
+                      <span className='font-bold text-slate-500'>0m</span>
                     </div>
                   )}
                 </div>
