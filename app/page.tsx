@@ -2,96 +2,66 @@
 
 import { useState, useEffect } from 'react';
 
-// 1. Define the TypeScript type for our time blocks
 type TimeBlock = {
   login: string;
   logout: string;
 };
 
 export default function WorkTimeCalculator() {
-  // Configuration
   const [targetHours, setTargetHours] = useState<number | string>(8);
-
-  // State for the collapsible details section
   const [isDetailsOpen, setIsDetailsOpen] = useState<boolean>(false);
-
-  // Dynamic Array for Time Blocks
-  // CHANGED: Initial login is now also empty when there is no local storage
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([
     { login: '', logout: '' },
   ]);
-
-  // We track if the initial load from LocalStorage is done.
   const [isLoaded, setIsLoaded] = useState(false);
-
-  // State to drive real-time minute-by-minute updates
   const [now, setNow] = useState<Date>(new Date());
 
-  // ==========================================
-  // REAL-TIME CLOCK: Ticks every 30 seconds
-  // ==========================================
+  // Real-time minute updates
   useEffect(() => {
-    // We removed the immediate setNow() because the state is already initialized with new Date().
-    // Just start the interval to update it every 30 seconds from now on!
     const interval = setInterval(() => {
       setNow(new Date());
     }, 30000);
-
     return () => clearInterval(interval);
   }, []);
 
-  // ==========================================
-  // LOCAL STORAGE: Load Data (Runs once on mount)
-  // ==========================================
+  // Load Data
   useEffect(() => {
     const timer = setTimeout(() => {
       const savedData = localStorage.getItem('workTimeTrackerData');
-
       if (savedData) {
         try {
           const parsed = JSON.parse(savedData);
           const savedTimestamp = parsed.timestamp;
           const currentTimestamp = Date.now();
-
-          // Calculate 12 hours in milliseconds (12 hours * 60 min * 60 sec * 1000 ms)
           const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
 
-          // Check if the data is less than 12 hours old
           if (currentTimestamp - savedTimestamp < TWELVE_HOURS_MS) {
             setTargetHours(parsed.targetHours);
             setTimeBlocks(parsed.timeBlocks);
           } else {
-            // If it's older than 12 hours, delete it
             localStorage.removeItem('workTimeTrackerData');
           }
         } catch (error) {
           console.error('Error parsing local storage data', error);
         }
       }
-
-      // Mark as loaded to remove the loading spinner
       setIsLoaded(true);
     }, 0);
-
     return () => clearTimeout(timer);
   }, []);
 
-  // ==========================================
-  // LOCAL STORAGE: Save Data (Runs when inputs change)
-  // ==========================================
+  // Save Data
   useEffect(() => {
-    // Only save to local storage IF we have already finished the initial load
     if (isLoaded) {
       const dataToSave = {
         targetHours,
         timeBlocks,
-        timestamp: Date.now(), // Save the exact moment it was last updated
+        timestamp: Date.now(),
       };
       localStorage.setItem('workTimeTrackerData', JSON.stringify(dataToSave));
     }
   }, [targetHours, timeBlocks, isLoaded]);
 
-  // Handlers for dynamic rows
   const addTimeBlock = () => {
     setTimeBlocks([...timeBlocks, { login: '', logout: '' }]);
   };
@@ -110,14 +80,12 @@ export default function WorkTimeCalculator() {
     setTimeBlocks(newBlocks);
   };
 
-  // Helper to convert "HH:MM" to total minutes
   const timeToMins = (t: string | null): number | null => {
     if (!t) return null;
     const [h, m] = t.split(':').map(Number);
     return h * 60 + m;
   };
 
-  // Helper to convert minutes to "Hh Mm" string
   const minsToTimeStr = (m: number): string => {
     const isNegative = m < 0;
     const absM = Math.abs(m);
@@ -126,9 +94,6 @@ export default function WorkTimeCalculator() {
     return `${isNegative ? '-' : ''}${hours}h ${mins}m`;
   };
 
-  // ==========================================
-  // Render Loading State (Prevents UI Flash)
-  // ==========================================
   if (!isLoaded) {
     return (
       <div className='min-h-dvh bg-[linear-gradient(115deg,#94a3b8_0%,#cbd5e1_50%,#94a3b8_100%)] flex flex-col items-center justify-center p-4 font-sans'>
@@ -160,119 +125,126 @@ export default function WorkTimeCalculator() {
   }
 
   // ==========================================
-  // CALCULATIONS (Derived directly during render)
+  // CALCULATIONS: Sequential Engine
   // ==========================================
-  let rawWorked = 0;
-  let totalManualGaps = 0;
-
   const currentMinsNow = now.getHours() * 60 + now.getMinutes();
+  const validBlocks = timeBlocks
+    .map((block) => ({
+      in: timeToMins(block.login),
+      out: timeToMins(block.logout),
+      hasOut: block.logout !== '',
+    }))
+    .filter((b) => b.in !== null);
 
-  const validBlocks = [];
-  for (const block of timeBlocks) {
-    const inMins = timeToMins(block.login);
-    const outMins = timeToMins(block.logout);
-    // Even if logout is empty, if login exists, it's a valid active block
-    if (inMins !== null) {
-      validBlocks.push({ in: inMins, out: outMins, hasOut: outMins !== null });
-    }
-  }
+  let effectiveWorked = 0;
+  let totalManualGaps = 0;
+  let totalBreakRecognized = 0;
+
+  const gapDetails: { afterBlock: number; amount: number }[] = [];
+  const autoDetails: { inBlock: number; amount: number }[] = [];
 
   for (let i = 0; i < validBlocks.length; i++) {
     const block = validBlocks[i];
+    let duration = 0;
 
     if (block.hasOut && block.out !== null) {
-      // Completed block
-      let duration = block.out - block.in;
-      if (duration < 0) duration += 24 * 60; // Overnight
-      rawWorked += duration;
+      duration = block.out - block.in!;
+      if (duration < 0) duration += 24 * 60;
     } else {
-      // CHANGED: Active block (real-time tracking)
-      let duration = currentMinsNow - block.in;
+      duration = currentMinsNow - block.in!;
       if (duration < 0) {
         duration += 24 * 60;
-        // Safety heuristic: If duration indicates a 16+ hour shift because the user
-        // accidentally typed a *future* time for today, ignore it until time catches up.
         if (duration > 16 * 60) duration = 0;
       }
-      rawWorked += duration;
     }
 
-    // Manual gaps calculation
-    if (i > 0) {
-      const prevBlock = validBlocks[i - 1];
-      if (prevBlock.hasOut && prevBlock.out !== null) {
-        let gap = block.in - prevBlock.out;
+    // Process this block's duration
+    let blockAutoDeduction = 0;
+    let remainingDuration = duration;
+
+    // 1. Up to 6 hours
+    const t1 = Math.max(0, Math.min(remainingDuration, 360 - effectiveWorked));
+    effectiveWorked += t1;
+    remainingDuration -= t1;
+
+    // 2. Threshold: 6 hours requires 30m break
+    if (effectiveWorked === 360 && remainingDuration > 0) {
+      const shortfall = Math.max(0, 30 - totalBreakRecognized);
+      const deduction = Math.min(remainingDuration, shortfall);
+      blockAutoDeduction += deduction;
+      totalBreakRecognized += deduction;
+      remainingDuration -= deduction;
+    }
+
+    // 3. Between 6 and 9 hours
+    const t2 = Math.max(0, Math.min(remainingDuration, 540 - effectiveWorked));
+    effectiveWorked += t2;
+    remainingDuration -= t2;
+
+    // 4. Threshold: 9 hours requires total 45m break
+    if (effectiveWorked === 540 && remainingDuration > 0) {
+      const shortfall = Math.max(0, 45 - totalBreakRecognized);
+      const deduction = Math.min(remainingDuration, shortfall);
+      blockAutoDeduction += deduction;
+      totalBreakRecognized += deduction;
+      remainingDuration -= deduction;
+    }
+
+    // 5. Beyond 9 hours
+    effectiveWorked += remainingDuration;
+
+    // Log auto deductions for this specific block
+    if (blockAutoDeduction > 0) {
+      autoDetails.push({ inBlock: i + 1, amount: blockAutoDeduction });
+    }
+
+    // Calculate manual gap to the NEXT block
+    if (i < validBlocks.length - 1) {
+      const nextBlock = validBlocks[i + 1];
+      if (block.hasOut && block.out !== null) {
+        let gap = nextBlock.in! - block.out;
         if (gap < 0) gap += 24 * 60;
-        if (gap > 0) totalManualGaps += gap;
-      }
-    }
-  }
-
-  let E = 0; // Effective Work
-  let A = 0; // Auto Pauses
-  let rem = rawWorked;
-
-  // Waterfall distribution logic
-  if (rem <= 360) {
-    E = rem;
-    rem = 0;
-  } else {
-    E = 360;
-    rem -= 360;
-
-    let currentTotalBreak = totalManualGaps + A;
-    const shortfall = Math.max(0, 30 - currentTotalBreak);
-
-    if (rem <= shortfall) {
-      A += rem;
-      rem = 0;
-    } else {
-      A += shortfall;
-      rem -= shortfall;
-
-      if (rem <= 120) {
-        E += rem;
-        rem = 0;
-      } else {
-        E += 120;
-        rem -= 120;
-
-        currentTotalBreak = totalManualGaps + A;
-        const shortfall2 = Math.max(0, 45 - currentTotalBreak);
-
-        if (rem <= shortfall2) {
-          A += rem;
-          rem = 0;
-        } else {
-          A += shortfall2;
-          rem -= shortfall2;
-          E += rem;
+        if (gap > 0) {
+          totalManualGaps += gap;
+          totalBreakRecognized += gap;
+          gapDetails.push({ afterBlock: i + 1, amount: gap });
         }
       }
     }
   }
 
-  const effectiveWorked = E;
-  const autoPausesAppliedNow = A;
-
-  // Safely parse the target hours, defaulting to 0 if the input is empty or invalid
+  // ==========================================
+  // FUTURE SIMULATOR & EXPECTED BREAKS
+  // ==========================================
   const numericTargetHours = Number(targetHours) || 0;
   const targetMins = numericTargetHours * 60;
   const remainingMins = Math.max(0, targetMins - effectiveWorked);
 
-  let projectedRequiredBreak = 0;
-  if (targetMins > 480) projectedRequiredBreak = 45;
-  else if (targetMins > 360) projectedRequiredBreak = 30;
+  // We determine the legal break requirement based on whichever is higher: target vs actual
+  let expectedLegalBreak = 0;
+  if (effectiveWorked >= 540 || targetMins > 540) expectedLegalBreak = 45;
+  else if (effectiveWorked >= 360 || targetMins > 360) expectedLegalBreak = 30;
 
-  const totalAutoPausesForTarget = Math.max(
-    0,
-    projectedRequiredBreak - totalManualGaps,
-  );
+  // Simulator to find exactly how many MORE minutes we need to hit the target
+  let remainingLoggedInTime = 0;
+  if (targetMins > effectiveWorked) {
+    let simE = effectiveWorked;
+    let simBreakRec = totalBreakRecognized;
 
-  // Total logged-in time required minus what has *already* been worked (including real-time open shifts)
-  const totalLoggedInTimeNeeded = targetMins + totalAutoPausesForTarget;
-  const remainingLoggedInTime = totalLoggedInTimeNeeded - rawWorked;
+    while (simE < targetMins) {
+      remainingLoggedInTime++;
 
+      if (simE === 360 && simBreakRec < 30) {
+        simBreakRec++;
+      } else if (simE === 540 && simBreakRec < 45) {
+        simBreakRec++;
+      } else {
+        simE++;
+      }
+    }
+  }
+
+  // Determine End Time String
   let expectedEndStr = '--:--';
   let isActiveShift = false;
 
@@ -283,16 +255,13 @@ export default function WorkTimeCalculator() {
     if (lastBlock.hasOut && lastBlock.out !== null) {
       expectedEndMins = lastBlock.out + remainingLoggedInTime;
     } else {
-      // CHANGED: For active shifts, project from the *current* minute since rawWorked includes it
       expectedEndMins = currentMinsNow + remainingLoggedInTime;
       isActiveShift = true;
     }
 
     const expEndH = Math.floor(expectedEndMins / 60) % 24;
     const expEndM = expectedEndMins % 60;
-    expectedEndStr = `${expEndH.toString().padStart(2, '0')}:${expEndM
-      .toString()
-      .padStart(2, '0')}`;
+    expectedEndStr = `${expEndH.toString().padStart(2, '0')}:${expEndM.toString().padStart(2, '0')}`;
   } else if (
     remainingMins === 0 &&
     validBlocks.length > 0 &&
@@ -303,21 +272,53 @@ export default function WorkTimeCalculator() {
 
   const workedTimeStr = minsToTimeStr(effectiveWorked);
   const remainingTimeStr = minsToTimeStr(remainingMins);
-  const autoBreakStr = `${autoPausesAppliedNow}m`;
   const hasOpenBlock = validBlocks.some((block) => !block.hasOut);
   const shouldMuteRemainingTime =
     numericTargetHours === 0 || (remainingMins === 0 && numericTargetHours > 0);
 
-  // Hints for actively running auto-pause phases
-  const totalBreakSoFar = totalManualGaps + autoPausesAppliedNow;
-  // Phase 1 (toward 30 min): auto pause started but total break hasn't reached 30 min yet
-  const showPause30Hint = autoPausesAppliedNow > 0 && totalBreakSoFar < 30;
-  // Phase 2 (toward 45 min): past 8h, total break is between 30 and 45 min and auto pause is running
-  const showPause45Hint =
-    autoPausesAppliedNow > 0 &&
-    totalBreakSoFar >= 30 &&
-    totalBreakSoFar < 45 &&
-    rawWorked > 480;
+  // ==========================================
+  // BREAK BREAKDOWN LOGIC (Sequential Timeline)
+  // ==========================================
+  const breakBreakdown = [];
+  let accountedBreak = 0;
+
+  // Iterate through the timeline:
+  // 1. Check for Auto deductions in the current block
+  // 2. Check for Manual gap AFTER the current block
+  for (let i = 0; i < validBlocks.length; i++) {
+    const blockIndex = i + 1;
+    const remainingBreakNeeded = Math.max(
+      0,
+      expectedLegalBreak - accountedBreak,
+    );
+
+    // 1. Auto deductions for this specific block
+    const autoForBlock = autoDetails.find((a) => a.inBlock === blockIndex);
+    if (autoForBlock && remainingBreakNeeded > 0) {
+      const applied = Math.min(autoForBlock.amount, remainingBreakNeeded);
+      breakBreakdown.push({
+        label: `Abzug in Log-In ${blockIndex}`,
+        amount: applied,
+        type: 'auto',
+      });
+      accountedBreak += applied;
+    }
+
+    // 2. Manual gaps after this block
+    const manualForBlock = gapDetails.find((g) => g.afterBlock === blockIndex);
+    if (manualForBlock && accountedBreak < expectedLegalBreak) {
+      const needed = expectedLegalBreak - accountedBreak;
+      const applied = Math.min(manualForBlock.amount, needed);
+      if (applied > 0) {
+        breakBreakdown.push({
+          label: `Abzug Log-Out Zeit nach Log-In ${blockIndex}`,
+          amount: applied,
+          type: 'manual',
+        });
+        accountedBreak += applied;
+      }
+    }
+  }
 
   return (
     <div className='min-h-dvh bg-[linear-gradient(115deg,#94a3b8_0%,#cbd5e1_50%,#94a3b8_100%)] flex items-center justify-center p-4 font-sans text-slate-900'>
@@ -345,10 +346,10 @@ export default function WorkTimeCalculator() {
 
           {/* Dynamic Time Blocks Section */}
           <div>
-            {/* Headers row - dynamically sizes to match inputs below */}
             <div
-              className={`grid gap-4 mb-2 px-1 ${timeBlocks.length > 1 ? 'grid-cols-[1fr_1fr_40px]' : 'grid-cols-2'}`}
+              className={`grid gap-3 mb-2 px-1 ${timeBlocks.length > 1 ? 'grid-cols-[28px_1fr_1fr_40px]' : 'grid-cols-[28px_1fr_1fr]'} items-center`}
             >
+              <div></div>
               <label className='block text-sm font-medium text-slate-600 text-center'>
                 🕒 Log In
               </label>
@@ -362,22 +363,21 @@ export default function WorkTimeCalculator() {
               {timeBlocks.map((block, index) => (
                 <div
                   key={index}
-                  // CSS Grid fallback is fully robust on older iOS devices
-                  className={`grid gap-4 items-center ${
-                    timeBlocks.length > 1
-                      ? 'grid-cols-[1fr_1fr_40px]'
-                      : 'grid-cols-2'
-                  }`}
+                  className={`grid gap-3 items-center ${timeBlocks.length > 1 ? 'grid-cols-[28px_1fr_1fr_40px]' : 'grid-cols-[28px_1fr_1fr]'}`}
                 >
+                  {/* Row Badge */}
+                  <div className='flex items-center justify-center bg-indigo-100 text-indigo-700 rounded-full h-7 w-7 text-xs font-bold shadow-sm'>
+                    {index + 1}
+                  </div>
+
                   {/* Log In Column */}
                   <div className='relative w-full h-full'>
                     <input
                       type='time'
                       value={block.login}
                       onClick={(e) => {
-                        if ('showPicker' in HTMLInputElement.prototype) {
+                        if ('showPicker' in HTMLInputElement.prototype)
                           e.currentTarget.showPicker();
-                        }
                       }}
                       onChange={(e) =>
                         updateTimeBlock(index, 'login', e.target.value)
@@ -385,7 +385,6 @@ export default function WorkTimeCalculator() {
                       className='w-full text-center relative cursor-pointer appearance-none bg-white border border-slate-300 text-slate-900 rounded-xl px-2 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
                       [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:z-0'
                     />
-                    {/* Clear Button */}
                     {block.login && (
                       <button
                         onClick={() => updateTimeBlock(index, 'login', '')}
@@ -416,9 +415,8 @@ export default function WorkTimeCalculator() {
                       type='time'
                       value={block.logout}
                       onClick={(e) => {
-                        if ('showPicker' in HTMLInputElement.prototype) {
+                        if ('showPicker' in HTMLInputElement.prototype)
                           e.currentTarget.showPicker();
-                        }
                       }}
                       onChange={(e) =>
                         updateTimeBlock(index, 'logout', e.target.value)
@@ -426,7 +424,6 @@ export default function WorkTimeCalculator() {
                       className='w-full text-center relative cursor-pointer appearance-none bg-white border border-slate-300 text-slate-900 rounded-xl px-2 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm 
                       [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:z-0'
                     />
-                    {/* Clear Button */}
                     {block.logout && (
                       <button
                         onClick={() => updateTimeBlock(index, 'logout', '')}
@@ -451,7 +448,7 @@ export default function WorkTimeCalculator() {
                     )}
                   </div>
 
-                  {/* Delete Row Button */}
+                  {/* Delete Button */}
                   {timeBlocks.length > 1 && (
                     <button
                       onClick={() => removeTimeBlock(index)}
@@ -500,7 +497,6 @@ export default function WorkTimeCalculator() {
 
           {/* Output Display */}
           <div className='mt-8 space-y-3 pt-4 border-t border-slate-200'>
-            {/* Main Primary Output: Always Visible */}
             <div
               className={`flex items-center p-4 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-300/60 relative overflow-hidden ${remainingMins === 0 && numericTargetHours > 0 ? 'justify-center' : 'justify-between'}`}
             >
@@ -524,7 +520,6 @@ export default function WorkTimeCalculator() {
               )}
             </div>
 
-            {/* Collapse Toggle Button */}
             <button
               onClick={() => setIsDetailsOpen(!isDetailsOpen)}
               className='w-full flex items-center justify-between p-3 mt-2 text-sm font-medium text-slate-600 bg-white/50 hover:bg-white/80 border border-slate-200 rounded-xl transition-all'
@@ -548,6 +543,7 @@ export default function WorkTimeCalculator() {
             {/* Collapsible Content Section */}
             {isDetailsOpen && (
               <div className='space-y-3 pt-2 animate-in fade-in slide-in-from-top-2 duration-300'>
+                {/* 1. Effektive Arbeitszeit */}
                 <div
                   className={`flex justify-between items-center p-4 rounded-2xl border shadow-sm ${remainingMins === 0 && numericTargetHours > 0 ? 'bg-emerald-50/80 border-emerald-100' : 'bg-white border-slate-200'}`}
                 >
@@ -563,35 +559,109 @@ export default function WorkTimeCalculator() {
                   </span>
                 </div>
 
-                <div
-                  className={`flex justify-between items-center p-4 rounded-2xl border shadow-sm ${autoPausesAppliedNow === 0 ? 'bg-slate-100/80 border-slate-200' : 'bg-amber-50/80 border-amber-200'}`}
-                >
-                  <div className='flex flex-col'>
-                    <span
-                      className={`text-sm font-medium ${autoPausesAppliedNow === 0 ? 'text-slate-500' : 'text-amber-800'}`}
-                    >
-                      Automatische Pause
-                    </span>
-                    <span
-                      className={`text-xs ${autoPausesAppliedNow === 0 ? 'text-slate-400' : 'text-amber-600'}`}
-                    >
-                      (Abgezogen von effektiver Arbeitszeit)
-                    </span>
+                {/* 2. Erfasste Pausen (Log-Out) - Shows all manual raw gaps */}
+                {gapDetails.length > 0 && (
+                  <div className='bg-sky-50/80 border border-sky-100 p-4 rounded-2xl shadow-sm space-y-3'>
+                    <div className='flex items-center text-sm font-semibold text-sky-800 mb-1'>
+                      <svg
+                        xmlns='http://www.w3.org/2000/svg'
+                        className='h-4 w-4 mr-1.5'
+                        viewBox='0 0 20 20'
+                        fill='currentColor'
+                      >
+                        <path
+                          fillRule='evenodd'
+                          d='M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z'
+                          clipRule='evenodd'
+                        />
+                      </svg>
+                      Gesamte erfasste Log-Out Zeit
+                    </div>
+                    {gapDetails.map((gap, i) => (
+                      <div
+                        key={i}
+                        className='flex justify-between items-center text-sm'
+                      >
+                        <span className='text-sky-700'>
+                          Nach Log-In {gap.afterBlock}
+                        </span>
+                        <span className='font-bold text-sky-700'>
+                          {minsToTimeStr(gap.amount)}
+                        </span>
+                      </div>
+                    ))}
+                    {gapDetails.length > 1 && (
+                      <div className='flex justify-between items-center pt-2 border-t border-sky-200/60'>
+                        <span className='text-sm font-medium text-sky-800'>
+                          Gesamte Log-Out Pause
+                        </span>
+                        <span className='font-bold text-sky-800'>
+                          {minsToTimeStr(totalManualGaps)}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <div className='flex flex-col items-end'>
-                    <span
-                      className={`text-lg font-bold ${autoPausesAppliedNow === 0 ? 'text-slate-400' : 'text-amber-700'}`}
-                    >
-                      {autoBreakStr}
-                    </span>
-                    {(showPause30Hint || showPause45Hint) && (
-                      <span className='text-xs text-amber-500 font-medium'>
-                        {showPause30Hint ? 'von 30 min' : 'von 45 min'}
+                )}
+
+                {/* 3. Gesetzliche Pausen (Anrechnung) - Maps out exactly how 30m/45m was fulfilled */}
+                <div className='bg-amber-50/80 border border-amber-200 p-4 rounded-2xl shadow-sm space-y-3'>
+                  <div className='flex items-center justify-between text-sm font-semibold text-amber-800 mb-1'>
+                    <div className='flex items-center'>
+                      <svg
+                        xmlns='http://www.w3.org/2000/svg'
+                        className='h-4 w-4 mr-1.5'
+                        viewBox='0 0 20 20'
+                        fill='currentColor'
+                      >
+                        <path
+                          fillRule='evenodd'
+                          d='M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.415-1.414L6.524 5.11a6 6 0 018.368 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z'
+                          clipRule='evenodd'
+                        />
+                      </svg>
+                      Anrechnung Gesetzliche Pause
+                    </div>
+                    {expectedLegalBreak > 0 && (
+                      <span className='text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200'>
+                        Ziel: {expectedLegalBreak}m
                       </span>
                     )}
                   </div>
+
+                  {breakBreakdown.map((item, i) => (
+                    <div
+                      key={i}
+                      className='flex justify-between items-center text-sm'
+                    >
+                      <span className='text-amber-700'>{item.label}</span>
+                      <span className='font-bold text-amber-700'>
+                        {item.amount}m
+                      </span>
+                    </div>
+                  ))}
+
+                  {breakBreakdown.length > 1 && (
+                    <div className='flex justify-between items-center pt-2 border-t border-amber-200/60'>
+                      <span className='text-sm font-medium text-amber-800'>
+                        Gesamte abgezogene Pausenzeit
+                      </span>
+                      <span className='font-bold text-amber-800'>
+                        {accountedBreak}m
+                      </span>
+                    </div>
+                  )}
+
+                  {breakBreakdown.length === 0 && (
+                    <div className='flex justify-between items-center text-sm'>
+                      <span className='text-amber-700'>
+                        Kein Abzug notwendig
+                      </span>
+                      <span className='font-bold text-amber-700'>0m</span>
+                    </div>
+                  )}
                 </div>
 
+                {/* 4. Verbleibende Zeit */}
                 <div
                   className={`flex justify-between items-center p-4 rounded-2xl border shadow-sm ${shouldMuteRemainingTime ? 'bg-slate-100/80 border-slate-200' : 'bg-rose-50/80 border-rose-100'}`}
                 >
