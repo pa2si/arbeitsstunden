@@ -127,14 +127,134 @@ export default function WorkTimeCalculator() {
   // ==========================================
   // CALCULATIONS: Sequential Engine
   // ==========================================
+  const DAY_MINS = 24 * 60;
+  const WORK_START_MINS = 6 * 60;
+  const WORK_END_MINS = 20 * 60;
+
   const currentMinsNow = now.getHours() * 60 + now.getMinutes();
+  const getOverlapWithDailyWindow = (
+    start: number,
+    end: number,
+    windowStartOffset: number,
+    windowEndOffset: number,
+  ): number => {
+    if (end <= start) return 0;
+
+    let total = 0;
+    const firstDay = Math.floor(start / DAY_MINS);
+    const lastDay = Math.floor((end - 1) / DAY_MINS);
+
+    for (let day = firstDay; day <= lastDay; day++) {
+      const windowStart = day * DAY_MINS + windowStartOffset;
+      const windowEnd = day * DAY_MINS + windowEndOffset;
+      const overlapStart = Math.max(start, windowStart);
+      const overlapEnd = Math.min(end, windowEnd);
+      if (overlapEnd > overlapStart) {
+        total += overlapEnd - overlapStart;
+      }
+    }
+
+    return total;
+  };
+
+  const getOverlapWithOfficialWindow = (start: number, end: number): number =>
+    getOverlapWithDailyWindow(start, end, WORK_START_MINS, WORK_END_MINS);
+
+  const alignCurrentToBlock = (blockStartAbs: number): number => {
+    let alignedNow = currentMinsNow;
+    while (alignedNow < blockStartAbs) {
+      alignedNow += DAY_MINS;
+    }
+
+    // Guard against very stale open sessions, but still keep realistic same-day
+    // calculations (e.g. early login before 06:00) intact.
+    if (alignedNow - blockStartAbs > 36 * 60) {
+      return blockStartAbs + 36 * 60;
+    }
+
+    return alignedNow;
+  };
+
+  const moveToOfficialWindow = (absMins: number): number => {
+    const dayBase = Math.floor(absMins / DAY_MINS) * DAY_MINS;
+    const windowStart = dayBase + WORK_START_MINS;
+    const windowEnd = dayBase + WORK_END_MINS;
+
+    if (absMins < windowStart) return windowStart;
+    if (absMins >= windowEnd) return dayBase + DAY_MINS + WORK_START_MINS;
+    return absMins;
+  };
+
+  const addMinutesInsideOfficialWindow = (
+    startAbsMins: number,
+    minutesToAdd: number,
+  ): number => {
+    let cursor = moveToOfficialWindow(startAbsMins);
+    let remaining = minutesToAdd;
+
+    while (remaining > 0) {
+      const dayBase = Math.floor(cursor / DAY_MINS) * DAY_MINS;
+      const windowEnd = dayBase + WORK_END_MINS;
+      const availableToday = windowEnd - cursor;
+
+      if (remaining <= availableToday) {
+        return cursor + remaining;
+      }
+
+      remaining -= availableToday;
+      cursor = dayBase + DAY_MINS + WORK_START_MINS;
+    }
+
+    return cursor;
+  };
+
   const validBlocks = timeBlocks
     .map((block) => ({
-      in: timeToMins(block.login),
-      out: timeToMins(block.logout),
+      inMins: timeToMins(block.login),
+      outMins: timeToMins(block.logout),
       hasOut: block.logout !== '',
     }))
-    .filter((b) => b.in !== null);
+    .filter(
+      (b): b is { inMins: number; outMins: number | null; hasOut: boolean } =>
+        b.inMins !== null,
+    )
+    .reduce<
+      {
+        inAbs: number;
+        outAbs: number | null;
+        hasOut: boolean;
+        countedDuration: number;
+      }[]
+    >((acc, block) => {
+      const lastInAbs = acc.length > 0 ? acc[acc.length - 1].inAbs : null;
+      let inAbs = block.inMins;
+
+      if (lastInAbs !== null) {
+        while (inAbs < lastInAbs) {
+          inAbs += DAY_MINS;
+        }
+      }
+
+      let outAbs: number | null = null;
+      if (block.hasOut && block.outMins !== null) {
+        outAbs = block.outMins;
+        while (outAbs < inAbs) {
+          outAbs += DAY_MINS;
+        }
+      }
+
+      const blockEndAbs = outAbs ?? alignCurrentToBlock(inAbs);
+      const countedDuration = getOverlapWithOfficialWindow(inAbs, blockEndAbs);
+
+      acc.push({
+        inAbs,
+        outAbs,
+        hasOut: block.hasOut,
+        countedDuration,
+      });
+
+      return acc;
+    }, []);
 
   let effectiveWorked = 0;
   let totalManualGaps = 0;
@@ -145,18 +265,7 @@ export default function WorkTimeCalculator() {
 
   for (let i = 0; i < validBlocks.length; i++) {
     const block = validBlocks[i];
-    let duration = 0;
-
-    if (block.hasOut && block.out !== null) {
-      duration = block.out - block.in!;
-      if (duration < 0) duration += 24 * 60;
-    } else {
-      duration = currentMinsNow - block.in!;
-      if (duration < 0) {
-        duration += 24 * 60;
-        if (duration > 16 * 60) duration = 0;
-      }
-    }
+    const duration = block.countedDuration;
 
     // Process this block's duration
     let blockAutoDeduction = 0;
@@ -201,9 +310,8 @@ export default function WorkTimeCalculator() {
     // Calculate manual gap to the NEXT block
     if (i < validBlocks.length - 1) {
       const nextBlock = validBlocks[i + 1];
-      if (block.hasOut && block.out !== null) {
-        let gap = nextBlock.in! - block.out;
-        if (gap < 0) gap += 24 * 60;
+      if (block.hasOut && block.outAbs !== null) {
+        const gap = getOverlapWithOfficialWindow(block.outAbs, nextBlock.inAbs);
         if (gap > 0) {
           totalManualGaps += gap;
           totalBreakRecognized += gap;
@@ -250,16 +358,24 @@ export default function WorkTimeCalculator() {
 
   if (validBlocks.length > 0 && remainingMins > 0 && numericTargetHours > 0) {
     const lastBlock = validBlocks[validBlocks.length - 1];
-    let expectedEndMins = 0;
+    let expectedEndAbs = 0;
 
-    if (lastBlock.hasOut && lastBlock.out !== null) {
-      expectedEndMins = lastBlock.out + remainingLoggedInTime;
+    if (lastBlock.hasOut && lastBlock.outAbs !== null) {
+      expectedEndAbs = addMinutesInsideOfficialWindow(
+        lastBlock.outAbs,
+        remainingLoggedInTime,
+      );
     } else {
-      expectedEndMins = currentMinsNow + remainingLoggedInTime;
+      const currentAligned = alignCurrentToBlock(lastBlock.inAbs);
+      expectedEndAbs = addMinutesInsideOfficialWindow(
+        currentAligned,
+        remainingLoggedInTime,
+      );
       isActiveShift = true;
     }
 
-    const expEndH = Math.floor(expectedEndMins / 60) % 24;
+    const expectedEndMins = ((expectedEndAbs % DAY_MINS) + DAY_MINS) % DAY_MINS;
+    const expEndH = Math.floor(expectedEndMins / 60);
     const expEndM = expectedEndMins % 60;
     expectedEndStr = `${expEndH.toString().padStart(2, '0')}:${expEndM.toString().padStart(2, '0')}`;
   } else if (
@@ -318,6 +434,30 @@ export default function WorkTimeCalculator() {
   }
 
   const hasActivePause = breakBreakdown.length > 0;
+
+  const officialWindowFeedback: {
+    label: string;
+    amount: number;
+  }[] = [];
+
+  timeBlocks.forEach((block, index) => {
+    const loginMins = timeToMins(block.login);
+    const logoutMins = timeToMins(block.logout);
+
+    if (loginMins !== null && loginMins < WORK_START_MINS) {
+      officialWindowFeedback.push({
+        label: `Log-In ${index + 1} ist zu frueh`,
+        amount: WORK_START_MINS - loginMins,
+      });
+    }
+
+    if (logoutMins !== null && logoutMins > WORK_END_MINS) {
+      officialWindowFeedback.push({
+        label: `Log-Out ${index + 1} ist zu spaet`,
+        amount: logoutMins - WORK_END_MINS,
+      });
+    }
+  });
 
   return (
     <div className='min-h-dvh bg-[linear-gradient(115deg,#94a3b8_0%,#cbd5e1_50%,#94a3b8_100%)] flex items-center justify-center p-4 font-sans text-slate-900'>
@@ -558,7 +698,30 @@ export default function WorkTimeCalculator() {
                   </span>
                 </div>
 
-                {/* 2. Erfasste Pausen (Log-Out) - Shows all manual raw gaps */}
+                {/* 2. Offizielle Arbeitszeitgrenzen */}
+                {officialWindowFeedback.length > 0 && (
+                  <div className='bg-rose-50/90 border border-rose-200 p-4 rounded-2xl shadow-sm space-y-3'>
+                    <div className='flex items-center text-sm font-semibold text-rose-800 mb-1'>
+                      Zeit ausserhalb 06:00 - 20:00
+                    </div>
+                    {officialWindowFeedback.map((item, i) => (
+                      <div
+                        key={i}
+                        className='flex justify-between items-center text-sm'
+                      >
+                        <span className='text-rose-700'>{item.label}</span>
+                        <span className='font-bold text-rose-700'>
+                          {minsToTimeStr(item.amount)}
+                        </span>
+                      </div>
+                    ))}
+                    <div className='pt-2 border-t border-rose-200/60 text-xs text-rose-700'>
+                      Diese Zeit wird nicht validiert und nicht angerechnet.
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Erfasste Pausen (Log-Out) - Shows all manual raw gaps */}
                 {gapDetails.length > 0 && (
                   <div className='bg-sky-50/80 border border-sky-100 p-4 rounded-2xl shadow-sm space-y-3'>
                     <div className='flex items-center text-sm font-semibold text-sky-800 mb-1'>
@@ -602,7 +765,7 @@ export default function WorkTimeCalculator() {
                   </div>
                 )}
 
-                {/* 3. Gesetzliche Pausen (Anrechnung) - Now dynamically styled! */}
+                {/* 4. Gesetzliche Pausen (Anrechnung) - Now dynamically styled! */}
                 <div
                   className={`p-4 rounded-2xl border shadow-sm space-y-3 ${hasActivePause ? 'bg-amber-50/80 border-amber-200' : 'bg-slate-50/80 border-slate-200'}`}
                 >
@@ -666,7 +829,7 @@ export default function WorkTimeCalculator() {
                   )}
                 </div>
 
-                {/* 4. Verbleibende Zeit */}
+                {/* 5. Verbleibende Zeit */}
                 <div
                   className={`flex justify-between items-center p-4 rounded-2xl border shadow-sm ${shouldMuteRemainingTime ? 'bg-slate-100/80 border-slate-200' : 'bg-rose-50/80 border-rose-100'}`}
                 >
