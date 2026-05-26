@@ -125,7 +125,7 @@ export default function WorkTimeCalculator() {
   }
 
   // ==========================================
-  // CALCULATIONS: Sequential Engine
+  // CALCULATIONS: Aggregate Engine
   // ==========================================
   const DAY_MINS = 24 * 60;
   const WORK_START_MINS = 6 * 60;
@@ -166,8 +166,6 @@ export default function WorkTimeCalculator() {
       alignedNow += DAY_MINS;
     }
 
-    // Guard against very stale open sessions, but still keep realistic same-day
-    // calculations (e.g. early login before 06:00) intact.
     if (alignedNow - blockStartAbs > 36 * 60) {
       return blockStartAbs + 36 * 60;
     }
@@ -256,27 +254,41 @@ export default function WorkTimeCalculator() {
       return acc;
     }, []);
 
-  let effectiveWorked = 0;
+  // 1. Pre-Pass: Calculate Total Daily Manual Gaps First (Aggregate Setup)
   let totalManualGaps = 0;
-  let totalBreakRecognized = 0;
-
   const gapDetails: { afterBlock: number; amount: number }[] = [];
+
+  for (let i = 0; i < validBlocks.length - 1; i++) {
+    const block = validBlocks[i];
+    const nextBlock = validBlocks[i + 1];
+    if (block.hasOut && block.outAbs !== null) {
+      const gap = getOverlapWithOfficialWindow(block.outAbs, nextBlock.inAbs);
+      if (gap > 0) {
+        totalManualGaps += gap;
+        gapDetails.push({ afterBlock: i + 1, amount: gap });
+      }
+    }
+  }
+
+  let effectiveWorked = 0;
+  // Initialize recognized breaks with the daily total of manual gaps
+  let totalBreakRecognized = totalManualGaps;
   const autoDetails: { inBlock: number; amount: number }[] = [];
 
+  // 2. Evaluate Blocks with pre-filled break bank
   for (let i = 0; i < validBlocks.length; i++) {
     const block = validBlocks[i];
     const duration = block.countedDuration;
 
-    // Process this block's duration
     let blockAutoDeduction = 0;
     let remainingDuration = duration;
 
-    // 1. Up to 6 hours
+    // Up to 6 hours
     const t1 = Math.max(0, Math.min(remainingDuration, 360 - effectiveWorked));
     effectiveWorked += t1;
     remainingDuration -= t1;
 
-    // 2. Threshold: 6 hours requires 30m break
+    // Threshold: 6 hours requires 30m break
     if (effectiveWorked === 360 && remainingDuration > 0) {
       const shortfall = Math.max(0, 30 - totalBreakRecognized);
       const deduction = Math.min(remainingDuration, shortfall);
@@ -285,12 +297,12 @@ export default function WorkTimeCalculator() {
       remainingDuration -= deduction;
     }
 
-    // 3. Between 6 and 9 hours
+    // Between 6 and 9 hours
     const t2 = Math.max(0, Math.min(remainingDuration, 540 - effectiveWorked));
     effectiveWorked += t2;
     remainingDuration -= t2;
 
-    // 4. Threshold: 9 hours requires total 45m break
+    // Threshold: 9 hours requires total 45m break
     if (effectiveWorked === 540 && remainingDuration > 0) {
       const shortfall = Math.max(0, 45 - totalBreakRecognized);
       const deduction = Math.min(remainingDuration, shortfall);
@@ -299,25 +311,11 @@ export default function WorkTimeCalculator() {
       remainingDuration -= deduction;
     }
 
-    // 5. Beyond 9 hours
+    // Beyond 9 hours
     effectiveWorked += remainingDuration;
 
-    // Log auto deductions for this specific block
     if (blockAutoDeduction > 0) {
       autoDetails.push({ inBlock: i + 1, amount: blockAutoDeduction });
-    }
-
-    // Calculate manual gap to the NEXT block
-    if (i < validBlocks.length - 1) {
-      const nextBlock = validBlocks[i + 1];
-      if (block.hasOut && block.outAbs !== null) {
-        const gap = getOverlapWithOfficialWindow(block.outAbs, nextBlock.inAbs);
-        if (gap > 0) {
-          totalManualGaps += gap;
-          totalBreakRecognized += gap;
-          gapDetails.push({ afterBlock: i + 1, amount: gap });
-        }
-      }
     }
   }
 
@@ -328,7 +326,6 @@ export default function WorkTimeCalculator() {
   const targetMins = numericTargetHours * 60;
   const remainingMins = Math.max(0, targetMins - effectiveWorked);
 
-  // We determine the legal break requirement based on whichever is higher: target vs actual
   let expectedLegalBreak = 0;
   if (effectiveWorked >= 540 || targetMins > 540) expectedLegalBreak = 45;
   else if (effectiveWorked >= 360 || targetMins > 360) expectedLegalBreak = 30;
