@@ -14,7 +14,7 @@ export default function WorkTimeCalculator() {
     { login: '', logout: '' },
   ]);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [now, setNow] = useState<Date>(new Date());
+  const [now, setNow] = useState<Date | null>(null);
 
   // Real-time minute updates
   useEffect(() => {
@@ -45,6 +45,7 @@ export default function WorkTimeCalculator() {
           console.error('Error parsing local storage data', error);
         }
       }
+      setNow(new Date());
       setIsLoaded(true);
     }, 0);
     return () => clearTimeout(timer);
@@ -94,7 +95,7 @@ export default function WorkTimeCalculator() {
     return `${isNegative ? '-' : ''}${hours}h ${mins}m`;
   };
 
-  if (!isLoaded) {
+  if (!isLoaded || now === null) {
     return (
       <div className='min-h-dvh bg-[linear-gradient(115deg,#94a3b8_0%,#cbd5e1_50%,#94a3b8_100%)] flex flex-col items-center justify-center p-4 font-sans'>
         <svg
